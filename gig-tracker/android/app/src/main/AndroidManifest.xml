@@ -20,6 +20,12 @@
             </intent-filter>
         </activity>
 
+        <!-- AdMob app ID. This is Google's public TEST app ID; replace it with your own
+             (AdMob > Apps > App settings) before publishing. The app crashes at launch without one. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -74,5 +74,17 @@
 	<array>
 		<string>location</string>
 	</array>
+	<!-- AdMob app ID: Google's public TEST app ID. Replace with your own before publishing. -->
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>MileMoney is free because of ads. Allowing tracking lets us show ads that are more relevant to you. You can remove all ads with MileMoney Pro.</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -18,6 +18,8 @@ const ICON = {
   stop: svg('<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/>', 1.5),
   car: svg('<path d="M5 16V11l2-5h10l2 5v5"/><path d="M3 16h18v3H3z"/><circle cx="7.5" cy="16" r="1.5"/><circle cx="16.5" cy="16" r="1.5"/>'),
   receipt: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),
+  spark: svg('<path d="M12 3l2.2 6.3L20.5 12l-6.3 2.2L12 21l-2.2-6.8L3.5 12l6.3-2.7z" fill="currentColor"/>', 1.2),
+  check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/>'),
   pin: svg('<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
 };
 $$('.dock-btn').forEach((b) => { b.innerHTML = ICON[{ home: 'home', activity: 'list', taxes: 'tax', account: 'user' }[b.dataset.view]]; });
@@ -344,7 +346,94 @@ function renderAccount() {
       await Cloud.signOut(); render(); toast('Signed out');
     };
   }
+  renderProCard();
 }
+function renderProCard() {
+  if (!Pro.enabled) return;
+  const box = $('#account-body');
+  if (Pro.active) {
+    const until = Pro.expires ? new Date(Pro.expires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    box.insertAdjacentHTML('afterbegin', `<div class="card"><div class="row" style="padding:0"><span class="badge" style="background:var(--inv-bg);color:var(--inv-fg);border:0">${ICON.spark}</span>
+      <div class="grow"><div class="t">MileMoney Pro</div><div class="m">No ads${until ? ` · ${Pro.willRenew ? 'renews' : 'ends'} ${until}` : ''}</div></div></div>
+      <a class="btn press" href="${esc(Pro.manageUrl)}" target="_blank" rel="noopener">Manage subscription</a></div>`);
+  } else {
+    box.insertAdjacentHTML('afterbegin', `<div class="card"><div class="row" style="padding:0"><span class="badge" style="background:var(--inv-bg);color:var(--inv-fg);border:0">${ICON.spark}</span>
+      <div class="grow"><div class="t">Go Pro</div><div class="m">Remove all ads from MileMoney</div></div></div>
+      <button class="btn solid press" id="go-pro">See plans</button></div>`);
+    $('#go-pro').onclick = openPaywall;
+  }
+}
+
+const PLAN_NAME = { ANNUAL: 'Yearly', SIX_MONTH: '6 months', THREE_MONTH: '3 months', TWO_MONTH: '2 months', MONTHLY: 'Monthly', WEEKLY: 'Weekly', LIFETIME: 'Lifetime' };
+const PLAN_ORDER = ['ANNUAL', 'SIX_MONTH', 'THREE_MONTH', 'TWO_MONTH', 'MONTHLY', 'WEEKLY', 'LIFETIME'];
+function trialText(p) {
+  const i = p.product && p.product.introPrice;
+  if (!i || i.price !== 0) return '';
+  const unit = String(i.periodUnit || '').toLowerCase().replace(/s$/, '');
+  return `${i.periodNumberOfUnits} ${unit}${i.periodNumberOfUnits > 1 ? 's' : ''} free`;
+}
+function openPaywall() {
+  if (!Pro.enabled) { toast('Subscriptions are available in the MileMoney phone app'); return; }
+  const L = (MM.legal || {});
+  const store = PLATFORM === 'ios' ? 'Apple ID' : 'Google Play account';
+  openSheet(`<div class="pro-hero"><div class="pro-mark">${ICON.spark}</div><h2>MileMoney Pro</h2><p>Every feature, zero ads.</p></div>
+    <ul class="perks">
+      <li>${ICON.check}No banner ads</li>
+      <li>${ICON.check}No full-screen ads after you save</li>
+      <li>${ICON.check}Keeps MileMoney independent and improving</li>
+    </ul>
+    <div id="plans"><div class="skeleton"></div><div class="skeleton"></div></div>
+    <button class="btn solid press" id="buy" disabled>Continue</button>
+    <button class="linkbtn" id="restore" style="display:block;margin:8px auto 0">Restore purchases</button>
+    <p class="legal">Subscriptions renew automatically at the price shown unless you cancel at least 24 hours before the current period ends.
+      Payment is charged to your ${store}. Manage or cancel any time in your account settings.
+      ${L.termsUrl ? `<a href="${esc(L.termsUrl)}" target="_blank" rel="noopener">Terms of Use</a>` : ''}${L.termsUrl && L.privacyUrl ? ' · ' : ''}${L.privacyUrl ? `<a href="${esc(L.privacyUrl)}" target="_blank" rel="noopener">Privacy Policy</a>` : ''}</p>`, async (b) => {
+    const buy = $('#buy', b);
+    let pkgs = [];
+    try { pkgs = await Pro.packages(); } catch (_) { /* shown below */ }
+    pkgs = pkgs.filter((p) => p && p.product).sort((x, y) => PLAN_ORDER.indexOf(x.packageType) - PLAN_ORDER.indexOf(y.packageType));
+    if (!pkgs.length) {
+      $('#plans', b).innerHTML = '<p class="fine" style="text-align:center;margin:0 0 8px">Plans couldn\'t load. Check your connection and try again.</p>';
+      return;
+    }
+    const monthly = pkgs.find((p) => p.packageType === 'MONTHLY');
+    let pick = 0;
+    $('#plans', b).innerHTML = pkgs.map((p, i) => {
+      const pr = p.product;
+      let sub = trialText(p) ? trialText(p) + ', then ' + pr.priceString : '';
+      let tag = '';
+      if (p.packageType === 'ANNUAL') {
+        if (pr.pricePerMonthString) sub = sub || `${pr.pricePerMonthString} a month, billed yearly`;
+        if (monthly && monthly.product.price > 0) {
+          const save = Math.round((1 - pr.price / (monthly.product.price * 12)) * 100);
+          if (save >= 5) tag = `Save ${save}%`;
+        }
+      }
+      if (!sub) sub = { LIFETIME: 'Pay once, keep it forever', MONTHLY: 'Billed monthly', WEEKLY: 'Billed weekly', ANNUAL: 'Billed yearly' }[p.packageType] || 'Auto-renewing';
+      return `<button type="button" class="plan press${i === pick ? ' on' : ''}" data-i="${i}">${tag ? `<span class="tag">${esc(tag)}</span>` : ''}
+        <span class="radio"></span><div><b>${esc(PLAN_NAME[p.packageType] || pr.title || 'Plan')}</b><div class="m">${esc(sub)}</div></div>
+        <span class="price">${esc(pr.priceString)}</span></button>`;
+    }).join('');
+    const label = () => { buy.textContent = trialText(pkgs[pick]) ? 'Start free trial' : 'Continue'; };
+    $('#plans', b).onclick = (e) => {
+      const el = e.target.closest('.plan'); if (!el) return;
+      pick = +el.dataset.i; $$('.plan', b).forEach((x) => x.classList.toggle('on', x === el)); label(); haptic();
+    };
+    label(); buy.disabled = false;
+    buy.onclick = async () => {
+      buy.disabled = true;
+      try {
+        if (await Pro.buy(pkgs[pick])) { closeSheet(); toast('Welcome to Pro. Ads are gone.'); }
+      } catch (err) { toast('Purchase failed: ' + (err.message || err)); }
+      buy.disabled = false;
+    };
+    $('#restore', b).onclick = async () => {
+      try { toast((await Pro.restore()) ? 'Pro restored. Ads are gone.' : 'No active subscription found'); if (Pro.active) closeSheet(); }
+      catch (err) { toast('Restore failed: ' + (err.message || err)); }
+    };
+  });
+}
+
 function timeAgo(t) {
   const s = Math.round((Date.now() - t) / 1000);
   if (s < 60) return 'just now';
@@ -369,6 +458,7 @@ function renderSettings() {
       <label class="btn press">Restore from a file<input type="file" id="restore" accept="application/json" hidden></label>
       <button class="btn press" id="demo-btn">Load demo data</button>
       <button class="btn danger press" id="wipe-btn">Delete all my data</button>
+      ${Ads.showing ? '<button class="btn press" id="ad-privacy">Ad privacy choices</button>' : ''}
       ${Cloud.enabled && Cloud.user ? '<button class="btn danger press" id="delete-acct">Delete my account</button>' : ''}
     </div>
     <p class="fine" style="text-align:center">MileMoney 2.0</p>`;
@@ -399,6 +489,8 @@ function renderSettings() {
     save(); Cloud.schedule(); render(); toast('All data deleted');
   };
   $('#demo-btn').onclick = loadDemo;
+  const adp = $('#ad-privacy');
+  if (adp) adp.onclick = () => Ads.privacyOptions();
   const del = $('#delete-acct');
   if (del) del.onclick = async () => {
     if (!confirm('Permanently delete your account and everything in it? This cannot be undone.')) return;
@@ -441,13 +533,14 @@ function openSheet(html, mount) {
   w.hidden = false; w.classList.remove('closing');
   requestAnimationFrame(() => requestAnimationFrame(() => w.classList.add('open')));
   if (mount) mount($('#sheet-body'));
+  Ads.pause();
   haptic();
 }
 function closeSheet() {
   const w = $('#sheet'); if (w.hidden) return;
   w.classList.add('closing'); w.classList.remove('open');
   $('#add-btn').classList.remove('open');
-  setTimeout(() => { if (!w.classList.contains('open')) { w.hidden = true; w.classList.remove('closing'); } }, REDUCED ? 0 : 320);
+  setTimeout(() => { if (!w.classList.contains('open')) { w.hidden = true; w.classList.remove('closing'); Ads.resume(); } }, REDUCED ? 0 : 320);
 }
 $('#sheet').addEventListener('click', (e) => { if (e.target.hasAttribute('data-close')) closeSheet(); });
 addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
@@ -513,7 +606,7 @@ function shiftForm(s) {
       const f = Object.fromEntries(new FormData(e.target));
       putRecord('shift', { id: s && s.id, date: f.date, platform, hours: +f.hours || 0, miles: +f.miles || 0, pay: +f.pay || 0,
         tips: +f.tips || 0, orders: Math.round(+f.orders || 0), notes: f.notes || '', ...(s && s.gas ? { gas: s.gas } : {}), ...(s && s.tolls ? { tolls: s.tolls } : {}) });
-      closeSheet(); render(); toast('Shift saved');
+      closeSheet(); render(); toast('Shift saved'); Ads.afterSave();
     };
     const del = $('#del', b);
     if (del) del.onclick = () => { if (confirm('Delete this shift?')) { removeRecord('shift', s.id); closeSheet(); render(); toast('Shift deleted'); } };
@@ -560,7 +653,7 @@ function expenseForm(x) {
       putRecord('expense', { id: x && x.id, date: f.date, cat, amount: +f.amount || 0, note: f.note || '',
         ...(cat === 'gas' && +f.gallons ? { gallons: +f.gallons } : {}),
         ...(c.group === 'other' ? { pct: Math.min(100, Math.max(0, +f.pct || 0)) } : {}) });
-      closeSheet(); render(); toast('Expense saved');
+      closeSheet(); render(); toast('Expense saved'); Ads.afterSave();
     };
     const del = $('#del', b);
     if (del) del.onclick = () => { if (confirm('Delete this expense?')) { removeRecord('expense', x.id); closeSheet(); render(); toast('Expense deleted'); } };
@@ -646,6 +739,7 @@ async function toggleTracker() {
   shiftForm({ date: ymd(new Date(t.start)), hours: ((Date.now() - t.start) / 3.6e6).toFixed(2), miles: t.miles.toFixed(1), platform: lastPlatform() });
 }
 $('#tracker').onclick = toggleTracker;
+$('#remove-ads').onclick = openPaywall;
 $('#tracker').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTracker(); } };
 setInterval(() => db.track && renderTracker(), 30000);
 document.addEventListener('visibilitychange', async () => {
@@ -656,6 +750,7 @@ document.addEventListener('visibilitychange', async () => {
 
 /* ---------- render & boot ---------- */
 function renderSyncPill() {
+  $('#remove-ads').hidden = !(Pro.enabled && Ads.showing);
   const p = $('#sync-pill');
   if (!Cloud.enabled || !Cloud.user) { p.hidden = true; return; }
   const st = Cloud.status; p.hidden = false;
@@ -674,16 +769,19 @@ let lastUser = null;
 Cloud.on(() => {
   renderSyncPill();
   const u = Cloud.user && Cloud.user.id;
-  if (u !== lastUser) { lastUser = u; if (ui.view === 'account') renderSettings(); } // show or hide "Delete my account"
+  if (u !== lastUser) { lastUser = u; Pro.identify(u); if (ui.view === 'account') renderSettings(); } // show or hide "Delete my account"
   if (ui.view === 'account') renderAccount();
 });
 Cloud.onRemoteChange = () => { applyTheme(); render(); };
+Pro.on(() => { render(); });
 
 (async function boot() {
   if (NATIVE) { document.documentElement.classList.add('native'); await loadNative(); }
   applyTheme();
   render();
   if (db.track) startWatch(); // resume a shift after the app was closed
+  await Pro.init();
   await Cloud.init();
+  Ads.init();
   if (!NATIVE && 'serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

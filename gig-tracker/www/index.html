@@ -20,7 +20,10 @@
     <section class="view active" id="view-home" aria-label="Overview">
       <header class="title-row">
         <h1>Overview</h1>
-        <span class="sync-pill" id="sync-pill" hidden></span>
+        <span class="title-actions">
+          <button class="pro-pill press" id="remove-ads" hidden>Remove ads</button>
+          <span class="sync-pill" id="sync-pill" hidden></span>
+        </span>
       </header>
 
       <div class="seg glass" id="period"></div>
@@ -101,6 +104,7 @@
   <script src="vendor/supabase.js"></script>
   <script src="store.js"></script>
   <script src="sync.js"></script>
+  <script src="monetize.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

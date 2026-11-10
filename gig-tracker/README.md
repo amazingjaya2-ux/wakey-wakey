@@ -18,6 +18,10 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
   exports a CSV for a tax preparer.
 - **Accounts and cloud sync** (email and password). Works offline, syncs when online, and works across phones.
   Includes in-app account deletion, which both app stores require.
+- **Free with ads, or Pro without them.** Free users see a small banner above the tab bar and, at most every
+  10 minutes, a full-screen ad after every 4th save (never during a shift). **MileMoney Pro** (monthly or yearly,
+  optional free trial) removes every ad. Purchases follow the user's account to their other phones, and there's
+  Restore purchases, Manage subscription, Google's EU/UK consent form and Apple's tracking prompt.
 - **Black and white glass design**: follows the phone's light or dark mode, with spring animations, a sliding tab bar,
   bottom sheets you can swipe down, and haptic taps on phones.
 
@@ -25,7 +29,8 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
 | Path | What it is |
 |---|---|
 | `www/` | The app (HTML/CSS/JS). `store.js` = data and tax math, `sync.js` = accounts and sync, `app.js` = screens |
-| `www/config.js` | Your Supabase project URL and public key (see below) |
+| `www/config.js` | Public keys for Supabase, RevenueCat and AdMob, plus your privacy/terms links |
+| `www/monetize.js` | Subscriptions (RevenueCat) and ads (AdMob) |
 | `supabase/schema.sql` | Database table, security rules and account deletion. Run it once in Supabase |
 | `android/`, `ios/` | Native projects (Android Studio / Xcode) |
 | `assets/` | Source icon and splash images (`npm run assets` regenerates every size) |
@@ -41,6 +46,32 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
 5. Run `npm run sync` and rebuild the app.
 
 Without step 3 the app runs in local-only mode: everything works, but there are no accounts.
+
+## Turn on subscriptions (RevenueCat)
+RevenueCat handles App Store and Google Play billing, receipts and renewals. It's free until about $2,500 a month in revenue.
+1. In **App Store Connect** and the **Google Play Console**, create auto-renewing subscriptions, for example
+   `pro_monthly` ($4.99) and `pro_yearly` ($39.99, optionally with a 1-week free trial).
+   Google Play only lets you create subscriptions after you upload a first build (the debug APK isn't enough:
+   upload a signed bundle to the Internal testing track).
+2. Create a project at [revenuecat.com](https://www.revenuecat.com) and add an iOS app and an Android app
+   (it walks you through connecting each store).
+3. **Product catalog → Entitlements**: create one called `pro` and attach both products.
+4. **Product catalog → Offerings**: make the `default` offering current, with a Monthly and an Annual package.
+5. Copy the public **Apple** (`appl_…`) and **Google** (`goog_…`) API keys into `revenueCat` in `www/config.js`.
+6. Test with a sandbox Apple account and a Google Play license tester. Purchases in testing are never charged.
+
+The paywall's yearly "Save %" badge and the "Start free trial" button come straight from the store prices.
+
+## Turn on ads (Google AdMob)
+1. Create an account at [admob.google.com](https://admob.google.com) and add the Android and iOS apps.
+2. Replace Google's **test app IDs** with your real app IDs in `android/app/src/main/AndroidManifest.xml`
+   (`com.google.android.gms.ads.APPLICATION_ID`) and `ios/App/App/Info.plist` (`GADApplicationIdentifier`).
+3. Create a **Banner** and an **Interstitial** ad unit for each platform and paste their IDs into `admob` in `www/config.js`.
+4. In AdMob, open **Privacy & messaging** and create a **GDPR** message (and the **IDFA** message for iOS). The app
+   shows these automatically where the law requires them. Settings → "Ad privacy choices" lets users change them.
+5. Keep `useTestAds: true` while developing. **Never tap your own real ads**, because AdMob bans accounts for that.
+   Set it to `false` only in the build you publish.
+6. Add an `app-ads.txt` file to your website (AdMob shows you the line to put in it).
 
 ## Get the Android app without installing anything
 Every push to GitHub builds a test APK. Open **Actions → Build Android app**, pick the latest run, and download
@@ -62,11 +93,14 @@ After editing anything in `www/`, run `npm run sync` to copy it into the native 
   location permission in App Review (it tracks business miles during a shift).
 - Choose the final app ID (`appId` in `capacitor.config.json`, the Android `applicationId` and the iOS bundle ID)
   before the first release. It can't change afterwards.
-- Both stores require a **privacy policy URL**. It should say that the app stores email, shifts and expenses in Supabase,
-  and that location is used on the phone to count miles and isn't uploaded.
+- Both stores require a **privacy policy URL** (put it in `legal.privacyUrl` too, because the paywall links to it). It should say
+  that the app stores email, shifts and expenses in Supabase, that location is used on the phone to count miles and
+  isn't uploaded, and that free users see ads from Google AdMob, which may use the device's advertising ID.
+- In the Play Console, answer **"Contains ads: Yes"**, and in the Data safety form declare the advertising ID and
+  purchase history. In App Store Connect, the privacy "nutrition label" needs the same (Identifiers, Purchases, Usage data).
 
 ## Ideas for later
-- Paid subscriptions (for example with RevenueCat, which handles both stores).
+- Extra Pro-only features (receipt photos, PDF tax reports) to make the subscription more attractive.
 - Sign in with Apple and Google.
 - Automatic earnings import through a consented earnings-data provider.
 - Receipt photos attached to expenses.
