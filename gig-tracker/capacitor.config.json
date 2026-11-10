@@ -2,7 +2,7 @@
   "appId": "com.milemoney.app",
   "appName": "MileMoney",
   "webDir": "www",
-  "backgroundColor": "#0f1512",
+  "backgroundColor": "#000000",
   "android": {
     "allowMixedContent": false,
     "useLegacyBridge": true
@@ -14,7 +14,7 @@
     "SystemBars": {
       "insetsHandling": "css",
       "initialViewportFitValueHint": "cover",
-      "style": "DARK"
+      "style": "DEFAULT"
     }
   }
 }

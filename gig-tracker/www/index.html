@@ -3,163 +3,104 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f1512">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f2f2f2" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>MileMoney</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icon.svg">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="top">
-    <h1>Mile<span>Money</span></h1>
-    <select id="period" aria-label="Time period">
-      <option value="today">Today</option>
-      <option value="week" selected>This week</option>
-      <option value="lastweek">Last week</option>
-      <option value="month">This month</option>
-      <option value="year">This year</option>
-      <option value="all">All time</option>
-    </select>
-  </header>
+  <div class="backdrop-art" aria-hidden="true"><i></i><i></i><i></i></div>
 
-  <main>
-    <!-- DASHBOARD -->
-    <section id="tab-dash" class="tab active">
-      <div id="tracker" class="card tracker">
-        <div>
-          <div class="label">GPS mileage tracker</div>
-          <div id="trk-status" class="trk-status">Not tracking</div>
+  <main id="app">
+    <!-- HOME -->
+    <section class="view active" id="view-home" aria-label="Overview">
+      <header class="title-row">
+        <h1>Overview</h1>
+        <span class="sync-pill" id="sync-pill" hidden></span>
+      </header>
+
+      <div class="seg glass" id="period"></div>
+
+      <div class="tracker glass press" id="tracker" role="button" tabindex="0">
+        <span class="tracker-dot" aria-hidden="true"></span>
+        <div class="tracker-text">
+          <div class="tracker-title" id="trk-title">Start shift</div>
+          <div class="tracker-sub" id="trk-status">Counts your miles with GPS</div>
         </div>
-        <button id="trk-btn" class="btn primary">Start shift</button>
+        <span class="tracker-go" id="trk-icon" aria-hidden="true"></span>
       </div>
 
-      <div class="hero card">
-        <div class="label">Earnings</div>
-        <div id="k-gross" class="big">$0.00</div>
-        <div class="sub"><span id="k-net">$0.00</span> after expenses & set-aside</div>
+      <div class="hero">
+        <div class="eyebrow" id="hero-label">Earned this week</div>
+        <div class="hero-num" id="k-gross">$0.00</div>
+        <div class="hero-sub" id="k-net"></div>
       </div>
 
-      <div class="grid">
-        <div class="stat"><div class="label">Hours</div><div id="k-hours" class="val">0</div></div>
-        <div class="stat"><div class="label">Miles</div><div id="k-miles" class="val">0</div></div>
-        <div class="stat"><div class="label">$ / hour</div><div id="k-hr" class="val">$0</div></div>
-        <div class="stat"><div class="label">$ / mile</div><div id="k-mi" class="val">$0</div></div>
-        <div class="stat"><div class="label">Miles / hour</div><div id="k-mph" class="val">0</div></div>
-        <div class="stat"><div class="label">Miles / $</div><div id="k-mpd" class="val">0</div></div>
-        <div class="stat"><div class="label">Orders</div><div id="k-orders" class="val">0</div></div>
-        <div class="stat"><div class="label">$ / order</div><div id="k-per" class="val">$0</div></div>
-        <div class="stat"><div class="label">Tips</div><div id="k-tips" class="val">$0</div></div>
-        <div class="stat"><div class="label">Tip share</div><div id="k-tipshare" class="val">0%</div></div>
-        <div class="stat"><div class="label">Driving cost</div><div id="k-cost" class="val">$0</div></div>
-        <div class="stat"><div class="label">Real $ / hour</div><div id="k-realhr" class="val">$0</div></div>
-      </div>
+      <div class="tiles" id="tiles"></div>
 
       <div class="card">
-        <div class="label">Last 8 weeks</div>
+        <div class="card-h"><span>Last 8 weeks</span></div>
         <div id="chart" class="chart"></div>
       </div>
 
       <div class="card">
-        <div class="label">By app</div>
-        <table class="tbl" id="by-app"></table>
+        <div class="card-h"><span>By app</span></div>
+        <div id="by-app"></div>
       </div>
     </section>
 
-    <!-- LOG -->
-    <section id="tab-log" class="tab">
-      <button id="add-btn" class="btn primary wide">+ Add shift</button>
-      <div id="log-list"></div>
+    <!-- ACTIVITY -->
+    <section class="view" id="view-activity" aria-label="Activity">
+      <header class="title-row"><h1>Activity</h1></header>
+      <div class="seg glass" id="act-seg"></div>
+      <div id="act-list"></div>
     </section>
 
     <!-- TAXES -->
-    <section id="tab-tax" class="tab">
-      <div class="card">
-        <div class="row-between">
-          <div class="label">Tax summary</div>
-          <select id="tax-year" aria-label="Tax year"></select>
-        </div>
-        <table class="tbl kv" id="tax-tbl"></table>
-        <p class="fine">Estimates only, not tax advice. With the standard mileage rate, gas, insurance and repairs are
-          already covered by the per-mile rate; tolls and parking are deducted separately. Self-employment tax is
-          15.3% of 92.35% of net profit. Check the current IRS rate at irs.gov.</p>
-      </div>
-      <div class="card">
-        <div class="label">Quarterly estimated payments</div>
-        <table class="tbl" id="q-tbl"></table>
-      </div>
-      <div class="card">
-        <div class="label">Export</div>
-        <p class="fine">CSV of every shift, including the mileage deduction for each one. You can hand it to your tax preparer or open it in a spreadsheet.</p>
-        <button id="csv-btn" class="btn wide">Download CSV</button>
-      </div>
+    <section class="view" id="view-taxes" aria-label="Taxes">
+      <header class="title-row">
+        <h1>Taxes</h1>
+        <label class="year-pick glass press"><select id="tax-year" aria-label="Tax year"></select></label>
+      </header>
+      <div id="tax-body"></div>
     </section>
 
-    <!-- SETTINGS -->
-    <section id="tab-set" class="tab">
-      <div class="card form">
-        <div class="label">Taxes</div>
-        <label>Income tax bracket (%)<input type="number" id="s-bracket" step="1" min="0" max="50"></label>
-        <label>State income tax (%)<input type="number" id="s-state" step="0.1" min="0" max="15"></label>
-        <label>IRS rate override ($/mi, blank = automatic)<input type="number" id="s-rate" step="0.005" min="0"></label>
-        <div class="label">Vehicle (for true driving cost)</div>
-        <label>Gas price ($/gal)<input type="number" id="s-gas" step="0.01" min="0"></label>
-        <label>Fuel economy (MPG)<input type="number" id="s-mpg" step="0.5" min="1"></label>
-        <label>Maintenance + wear ($/mi)<input type="number" id="s-wear" step="0.01" min="0"></label>
-        <button id="s-save" class="btn primary wide">Save settings</button>
-      </div>
-      <div class="card form">
-        <div class="label">Data</div>
-        <p class="fine">Your data stays on this device. Back it up regularly.</p>
-        <button id="backup-btn" class="btn wide">Back up (JSON)</button>
-        <label class="btn wide filebtn">Restore from backup<input type="file" id="restore" accept="application/json" hidden></label>
-        <button id="demo-btn" class="btn wide">Load demo data</button>
-        <button id="wipe-btn" class="btn danger wide">Delete all data</button>
-      </div>
+    <!-- ACCOUNT -->
+    <section class="view" id="view-account" aria-label="Account">
+      <header class="title-row"><h1>Account</h1></header>
+      <div id="account-body"></div>
+      <div id="settings-body"></div>
     </section>
   </main>
 
-  <nav class="tabs">
-    <button data-tab="dash" class="active">Dashboard</button>
-    <button data-tab="log">Shifts</button>
-    <button data-tab="tax">Taxes</button>
-    <button data-tab="set">Settings</button>
+  <nav class="dock glass" id="dock" aria-label="Main">
+    <span class="dock-ind" id="dock-ind" aria-hidden="true"></span>
+    <button class="dock-btn press active" data-view="home" aria-label="Overview"></button>
+    <button class="dock-btn press" data-view="activity" aria-label="Activity"></button>
+    <button class="dock-add press" id="add-btn" aria-label="Add"></button>
+    <button class="dock-btn press" data-view="taxes" aria-label="Taxes"></button>
+    <button class="dock-btn press" data-view="account" aria-label="Account"></button>
   </nav>
 
-  <dialog id="shift-dlg">
-    <form id="shift-form" method="dialog" class="form">
-      <h2 id="dlg-title">Add shift</h2>
-      <input type="hidden" name="id">
-      <label>Date<input type="date" name="date" required></label>
-      <label>App
-        <select name="platform">
-          <option>DoorDash</option><option>Uber Eats</option><option>Instacart</option>
-          <option>Grubhub</option><option>Amazon Flex</option><option>Walmart Spark</option>
-          <option>Uber</option><option>Lyft</option><option>Shipt</option><option>Other</option>
-        </select>
-      </label>
-      <div class="two">
-        <label>Hours<input type="number" name="hours" step="0.01" min="0" required></label>
-        <label>Miles<input type="number" name="miles" step="0.1" min="0" required></label>
-      </div>
-      <div class="two">
-        <label>Base pay ($)<input type="number" name="pay" step="0.01" min="0" required></label>
-        <label>Tips ($)<input type="number" name="tips" step="0.01" min="0" value="0"></label>
-      </div>
-      <div class="two">
-        <label>Orders / trips<input type="number" name="orders" step="1" min="0" value="0"></label>
-        <label>Gas spent ($)<input type="number" name="gas" step="0.01" min="0" value="0"></label>
-      </div>
-      <label>Tolls + parking ($)<input type="number" name="tolls" step="0.01" min="0" value="0"></label>
-      <label>Notes<input type="text" name="notes" maxlength="200"></label>
-      <div class="two">
-        <button type="button" id="dlg-cancel" class="btn">Cancel</button>
-        <button type="submit" class="btn primary">Save</button>
-      </div>
-      <button type="button" id="dlg-delete" class="btn danger wide" hidden>Delete shift</button>
-    </form>
-  </dialog>
+  <div class="sheet-wrap" id="sheet" hidden>
+    <div class="sheet-scrim" data-close></div>
+    <div class="sheet glass" role="dialog" aria-modal="true">
+      <div class="grabber" data-close></div>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
 
-  <script src="capacitor.js"></script>
+  <div class="toast glass" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="config.js"></script>
+  <script src="vendor/capacitor.js"></script>
+  <script src="vendor/supabase.js"></script>
+  <script src="store.js"></script>
+  <script src="sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
