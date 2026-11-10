@@ -7,6 +7,7 @@ fs.mkdirSync(out, { recursive: true });
 for (const [pkg, file] of [
   ['@capacitor/core/dist/capacitor.js', 'capacitor.js'],
   ['@supabase/supabase-js/dist/umd/supabase.js', 'supabase.js'],
+  ['jspdf/dist/jspdf.umd.min.js', 'jspdf.umd.min.js'],
 ]) {
   fs.copyFileSync(require.resolve(pkg), path.join(out, file));
   console.log('copied', file, 'into www/vendor/');

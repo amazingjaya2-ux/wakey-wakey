@@ -25,12 +25,33 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
 - **Black and white glass design**: follows the phone's light or dark mode, with spring animations, a sliding tab bar,
   bottom sheets you can swipe down, and haptic taps on phones.
 
+## Free vs Pro
+| | Free (with ads) | Pro |
+|---|---|---|
+| GPS mileage tracking, logging shifts and expenses | ✓ | ✓ |
+| Core stats: hours, miles, orders, $/hour, $/mile, $/order | ✓ | ✓ |
+| IRS mileage deduction for the year | ✓ | ✓ |
+| Back up / restore to a file | ✓ | ✓ |
+| **AI receipt scanner**: snap a receipt, Claude fills in amount, date, category, gallons | | ✓ |
+| **Receipt photos** saved with each expense and backed up | | ✓ |
+| **Full tax center**: estimate, standard vs actual comparison, quarterly set-asides | | ✓ |
+| **IRS-ready PDF report** (tax summary + dated mileage log) and CSV export | | ✓ |
+| **Cloud backup & sync** across phones | | ✓ |
+| **Deeper insights**: take-home pay, 8-week trend, best-paying app, best days, MPG and more | | ✓ |
+| **Weekly earnings goal** with a progress ring | | ✓ |
+| No ads | | ✓ |
+
+Free users can still create an account (so a purchase follows them), but their data stays on the phone.
+Tapping any Pro feature opens the paywall headed by that feature.
+
 ## Project layout
 | Path | What it is |
 |---|---|
 | `www/` | The app (HTML/CSS/JS). `store.js` = data and tax math, `sync.js` = accounts and sync, `app.js` = screens |
 | `www/config.js` | Public keys for Supabase, RevenueCat and AdMob, plus your privacy/terms links |
 | `www/monetize.js` | Subscriptions (RevenueCat) and ads (AdMob) |
+| `www/receipts.js` | Receipt photos: camera, shrinking, on-phone storage, cloud backup |
+| `supabase/functions/scan-receipt/` | Server function that reads receipts with Claude (Pro only, checked on the server) |
 | `supabase/schema.sql` | Database table, security rules and account deletion. Run it once in Supabase |
 | `android/`, `ios/` | Native projects (Android Studio / Xcode) |
 | `assets/` | Source icon and splash images (`npm run assets` regenerates every size) |
@@ -47,6 +68,27 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
 
 Without step 3 the app runs in local-only mode: everything works, but there are no accounts.
 
+## Turn on the AI receipt scanner
+The scanner runs on your server (a Supabase Edge Function) so your Claude API key never ships inside the app.
+It checks the user is signed in **and** has Pro (asking RevenueCat directly), limits each user to 40 scans a day,
+then sends the photo to Claude, which returns the amount, date, category, gallons and a short note.
+1. Re-run `supabase/schema.sql` in the SQL editor (it adds the private `receipts` photo bucket and the scan counter).
+2. Get a Claude API key at [console.anthropic.com](https://console.anthropic.com) and a RevenueCat **secret** API key
+   (RevenueCat → Project settings → API keys → Secret keys).
+3. Install the [Supabase CLI](https://supabase.com/docs/guides/cli), then in this folder:
+   ```sh
+   supabase login
+   supabase link --project-ref <your-project-ref>
+   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... REVENUECAT_SECRET_KEY=sk_...
+   supabase functions deploy scan-receipt
+   ```
+   Optional: `supabase secrets set SCAN_DAILY_LIMIT=40`.
+
+**Cost:** it uses Claude Opus 5.5 at low effort. A phone receipt photo is about 1,600 input tokens, so a scan
+costs roughly 1–2 cents ($4 per million input tokens, $20 per million output). Even a heavy user scanning
+5 receipts a day costs about $2 a month, well under a Pro subscription. If Claude ever declines a request,
+the API automatically retries it on a fallback model (`fallbacks: "default"`).
+
 ## Turn on subscriptions (RevenueCat)
 RevenueCat handles App Store and Google Play billing, receipts and renewals. It's free until about $2,500 a month in revenue.
 1. In **App Store Connect** and the **Google Play Console**, create auto-renewing subscriptions, for example
@@ -58,6 +100,7 @@ RevenueCat handles App Store and Google Play billing, receipts and renewals. It'
 3. **Product catalog → Entitlements**: create one called `pro` and attach both products.
 4. **Product catalog → Offerings**: make the `default` offering current, with a Monthly and an Annual package.
 5. Copy the public **Apple** (`appl_…`) and **Google** (`goog_…`) API keys into `revenueCat` in `www/config.js`.
+   Until then you can set `devUnlockPro: true` there to try every Pro feature (never in a published build).
 6. Test with a sandbox Apple account and a Google Play license tester. Purchases in testing are never charged.
 
 The paywall's yearly "Save %" badge and the "Start free trial" button come straight from the store prices.
@@ -100,7 +143,9 @@ After editing anything in `www/`, run `npm run sync` to copy it into the native 
   purchase history. In App Store Connect, the privacy "nutrition label" needs the same (Identifiers, Purchases, Usage data).
 
 ## Ideas for later
-- Extra Pro-only features (receipt photos, PDF tax reports) to make the subscription more attractive.
+- Automatic trip detection (start tracking when the car starts moving) and missed-shift reminders.
+- Multiple vehicles, each with its own deduction method.
+- Share a read-only report link with a tax preparer.
 - Sign in with Apple and Google.
 - Automatic earnings import through a consented earnings-data provider.
 - Receipt photos attached to expenses.

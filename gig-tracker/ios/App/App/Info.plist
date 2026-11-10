@@ -74,6 +74,10 @@
 	<array>
 		<string>location</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>MileMoney uses the camera to photograph receipts so it can log the expense for you.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MileMoney lets you pick a receipt photo from your library to log an expense.</string>
 	<!-- AdMob app ID: Google's public TEST app ID. Replace with your own before publishing. -->
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-3940256099942544~1458002511</string>

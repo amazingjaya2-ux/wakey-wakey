@@ -20,6 +20,10 @@ const ICON = {
   receipt: svg('<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>'),
   spark: svg('<path d="M12 3l2.2 6.3L20.5 12l-6.3 2.2L12 21l-2.2-6.8L3.5 12l6.3-2.7z" fill="currentColor"/>', 1.2),
   check: svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 10"/>'),
+  camera: svg('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+  image: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-8 8"/>'),
+  lock: svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
+  doc: svg('<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>'),
   pin: svg('<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>'),
 };
 $$('.dock-btn').forEach((b) => { b.innerHTML = ICON[{ home: 'home', activity: 'list', taxes: 'tax', account: 'user' }[b.dataset.view]]; });
@@ -98,6 +102,34 @@ function applyTheme() {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 
+/* ---------- Pro features ---------- */
+const PRO_FEATURES = {
+  scan: ['AI receipt scanner', 'Snap a receipt and the expense fills itself in.'],
+  receipts: ['Receipt photos', 'Keep a photo of every receipt, backed up.'],
+  taxes: ['Full tax center', 'Tax estimate, standard vs. actual, quarterly payments.'],
+  reports: ['IRS-ready reports', 'PDF mileage log and tax summary, plus CSV.'],
+  insights: ['Deeper insights', 'Best apps, best days and 8-week trends.'],
+  goals: ['Weekly goals', 'Set a target and watch your progress ring fill.'],
+  sync: ['Cloud backup & sync', 'Your data safe online and on all your phones.'],
+  noads: ['No ads', 'No banners and no full-screen ads.'],
+};
+function requirePro(key) {
+  if (Pro.active) return true;
+  openPaywall(key);
+  return false;
+}
+const proTag = '<span class="pro-tag">PRO</span>';
+function lockedCard(key, preview = '') {
+  const [title, text] = PRO_FEATURES[key];
+  return `<div class="card locked">${preview ? `<div class="locked-preview" aria-hidden="true">${preview}</div>` : ''}
+    <div class="locked-body">${proTag}<div class="t">${title}</div><p>${text}</p>
+    <button type="button" class="btn solid press" data-pro="${key}">${ICON.lock} Unlock with Pro</button></div></div>`;
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-pro]');
+  if (b) { e.preventDefault(); openPaywall(b.dataset.pro); }
+});
+
 /* ---------- HOME ---------- */
 seg($('#period'), PERIODS, ui.period, (v) => { ui.period = v; renderHome(); });
 function renderHome() {
@@ -106,7 +138,9 @@ function renderHome() {
   const t = summarize(shifts, exps);
   $('#hero-label').textContent = { today: 'Earned today', week: 'Earned this week', month: 'Earned this month', year: 'Earned this year', all: 'Earned all time' }[ui.period];
   animateNumber($('#k-gross'), t.gross);
-  $('#k-net').textContent = t.gross || t.spent ? `${money(t.net)} take-home after expenses & taxes` : 'Start a shift or tap + to log one';
+  const pro = Pro.active;
+  $('#k-net').textContent = !(t.gross || t.spent) ? 'Start a shift or tap + to log one'
+    : pro ? `${money(t.net)} take-home after expenses & taxes` : `${num(t.miles, 0)} miles · ${num(t.hours)} hours`;
   const mpgVal = recentMpg();
   const mpg = mpgVal ? num(mpgVal, 1) : `${num(+db.settings.mpg, 0)}<small> est.</small>`;
   const tiles = [
@@ -115,7 +149,14 @@ function renderHome() {
     ['Miles / hour', num(safeDiv(t.miles, t.hours))], ['Miles / order', num(safeDiv(t.miles, t.orders))], ['Miles / gallon', mpg],
     ['Tips', money(t.tips, 0)], ['Expenses', money(t.spent, 0)], ['Real $ / hour', money(safeDiv(t.gross - t.driveCost, t.hours))],
   ];
-  $('#tiles').innerHTML = tiles.map(([k, v], i) => `<div class="tile" style="--i:${i}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  $('#tiles').innerHTML = tiles.slice(0, pro ? 12 : 6).map(([k, v], i) => `<div class="tile" style="--i:${i}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+  // Free: core numbers only. Pro: goal, trends, best apps, best days.
+  $('#chart-card').hidden = !pro; $('#by-app-card').hidden = !pro; $('#best-days-card').hidden = !pro;
+  $('#home-locked').innerHTML = pro ? '' : lockedCard('insights', fakeBars()) + lockedCard('goals');
+  renderGoal(pro);
+  if (!pro) return;
+  renderBestDays();
 
   // weekly chart
   const w0 = startOfWeek(new Date()), weeks = [];
@@ -144,6 +185,56 @@ function renderHome() {
         <div class="bar-track"><span style="width:${safeDiv(s.gross, s.hours) / best * 100}%"></span></div></div>
       <div class="r"><div class="t">${money(safeDiv(s.gross, s.hours))}</div><div class="m">per hour</div></div></div>`).join('')
     : '<p class="fine" style="margin:0">Log shifts from different apps to see which one pays you best.</p>';
+}
+
+function fakeBars() {
+  return `<svg viewBox="0 0 320 90">${[40, 62, 35, 70, 55, 80, 48, 66].map((h, i) => `<rect x="${i * 40 + 6}" y="${90 - h}" width="28" height="${h}" rx="5" class="fake-bar"/>`).join('')}</svg>`;
+}
+
+/* Weekly goal (Pro): a ring that fills as this week's earnings approach the goal. */
+function renderGoal(pro) {
+  const box = $('#goal-card');
+  if (!pro) { box.innerHTML = ''; return; }
+  const goal = +db.settings.weeklyGoal || 0;
+  if (!goal) {
+    box.innerHTML = `<button type="button" class="card goal-empty press" id="goal-set">${ICON.spark}<div><b>Set a weekly goal</b><span>See how close you are every day</span></div></button>`;
+  } else {
+    const wk = periodRange('week');
+    const earned = inRange(db.shifts, wk).reduce((a, x) => a + gross(x), 0);
+    const pct = Math.min(1, earned / goal), R = 34, C = 2 * Math.PI * R;
+    const daysLeft = Math.max(0, Math.round((wk[1] - new Date()) / 864e5));
+    const left = Math.max(0, goal - earned);
+    box.innerHTML = `<button type="button" class="card goal press" id="goal-set" aria-label="Weekly goal, tap to change">
+      <svg class="ring" viewBox="0 0 80 80"><circle cx="40" cy="40" r="${R}" class="ring-bg"/>
+        <circle cx="40" cy="40" r="${R}" class="ring-fg" style="stroke-dasharray:${C};--off:${C * (1 - pct)};--full:${C}"/></svg>
+      <span class="ring-pct">${Math.round(pct * 100)}%</span>
+      <div class="goal-text"><span class="eyebrow">Weekly goal</span><b>${money(earned, 0)} of ${money(goal, 0)}</b>
+        <span>${left > 0 ? `${money(left, 0)} to go · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : 'Goal reached. Nice work!'}</span></div></button>`;
+  }
+  $('#goal-set').onclick = goalSheet;
+}
+function goalSheet() {
+  openSheet(`<h2>Weekly goal</h2><form id="goal-form">${field('goal', 'How much do you want to earn each week? ($)', db.settings.weeklyGoal || '', 'number', 'required')}
+    <button class="btn solid press" type="submit">Save goal</button>
+    ${db.settings.weeklyGoal ? '<button class="btn ghost press" type="button" id="goal-clear">Remove goal</button>' : ''}</form>`, (b) => {
+    $('#goal-form', b).onsubmit = (e) => { e.preventDefault(); updateSettings({ weeklyGoal: Math.max(0, +e.target.goal.value || 0) }); closeSheet(); render(); toast('Goal saved'); };
+    const c = $('#goal-clear', b); if (c) c.onclick = () => { updateSettings({ weeklyGoal: 0 }); closeSheet(); render(); };
+  });
+}
+
+/* Best days (Pro): average $/hour by weekday over the last 12 weeks. */
+function renderBestDays() {
+  const a = new Date(); a.setDate(a.getDate() - 84);
+  const b = new Date(); b.setDate(b.getDate() + 1);
+  const by = Array.from({ length: 7 }, () => ({ g: 0, h: 0 }));
+  for (const sh of inRange(db.shifts, [a, b])) { const d = (parseYmd(sh.date).getDay() + 6) % 7; by[d].g += gross(sh); by[d].h += +sh.hours || 0; }
+  const rates = by.map((x) => safeDiv(x.g, x.h)), top = Math.max(...rates);
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  $('#best-days').innerHTML = top ? `<div class="days">${rates.map((v, i) => `<div class="day${v === top ? ' best' : ''}">
+      <div class="day-bar"><span style="height:${Math.max(4, v / top * 100)}%;animation-delay:${i * 40}ms"></span></div>
+      <div class="day-v">${v ? '$' + Math.round(v) : '–'}</div><div class="day-n">${names[i]}</div></div>`).join('')}</div>
+    <p class="fine" style="margin:12px 2px 0">Your best day is <b>${names[rates.indexOf(top)]}</b> at ${money(top)}/hour (last 12 weeks).</p>`
+    : '<p class="fine" style="margin:0">Log a few shifts to see which days pay you best.</p>';
 }
 
 /* Miles per gallon from logged fill-ups over the last 90 days (a single week is too noisy).
@@ -177,7 +268,7 @@ function renderActivity() {
       const c = CAT[r.cat] || CAT.otherbiz;
       const tag = c.group === 'none' ? 'Personal' : c.group === 'vehicle' && db.settings.method !== 'actual' ? 'In mileage rate' : 'Deductible';
       html += `<button class="list-item press" style="--i:${i++}" data-kind="expense" data-id="${esc(r.id)}"><span class="badge">${c.group.startsWith('vehicle') ? ICON.car : ICON.receipt}</span>
-        <div class="grow"><div class="t">${esc(c.name)}</div><div class="m">${tag}${r.note ? ' · ' + esc(r.note) : ''}</div></div>
+        <div class="grow"><div class="t">${esc(c.name)}${r.receipt ? ` <span class="rc-dot" title="Has receipt photo">${ICON.image}</span>` : ''}</div><div class="m">${tag}${r.note ? ' · ' + esc(r.note) : ''}</div></div>
         <div class="r"><div class="t">${money(+r.amount)}</div>${r.gallons ? `<div class="m">${num(+r.gallons, 2)} gal</div>` : ''}</div></button>`;
     }
   }
@@ -193,6 +284,7 @@ $('#act-list').addEventListener('click', (e) => {
 function renderTaxes() {
   const years = new Set([new Date().getFullYear(), ...db.shifts.map((s) => +s.date.slice(0, 4)), ...db.expenses.map((s) => +s.date.slice(0, 4))]);
   $('#tax-year').innerHTML = [...years].sort((a, b) => b - a).map((y) => `<option ${y === ui.year ? 'selected' : ''}>${y}</option>`).join('');
+  if (!Pro.active) { renderTaxesFree(); return; }
   const r = taxYear(ui.year), d = r.d, s = db.settings;
   const other = r.method === 'standard' ? 'actual' : 'standard';
   const diff = d[other] - d[r.method];
@@ -247,7 +339,8 @@ function renderTaxes() {
       }).join('')}
     </div>
 
-    <button class="btn solid press" id="csv-btn">Export for my tax preparer</button>
+    <button class="btn solid press" id="pdf-btn">${ICON.doc} Download tax report (PDF)</button>
+    <button class="btn press" id="csv-btn">Export spreadsheet (CSV)</button>
     <p class="fine">Estimates only, not tax advice. Standard mileage covers gas, oil, tires, repairs, insurance and depreciation, so those are only deducted separately under the actual expense method. Actual expenses here leave out depreciation. If you use the actual method the first year you use a car for work, you can't switch that car to standard mileage later. Ask a tax pro before you file.</p>`;
 
   seg($('#method-seg'), [['standard', 'Standard mileage'], ['actual', 'Actual expenses']], r.method, (v) => { updateSettings({ method: v }); renderTaxes(); });
@@ -260,11 +353,96 @@ function renderTaxes() {
   };
   $('#add-exp-tax').onclick = () => expenseForm();
   $('#csv-btn').onclick = exportCsv;
+  $('#pdf-btn').onclick = () => exportPdf(ui.year);
+}
+function renderTaxesFree() {
+  const y = ui.year;
+  const shifts = db.shifts.filter((x) => x.date.startsWith(y + '-'));
+  const miles = shifts.reduce((a, x) => a + (+x.miles || 0), 0);
+  const ded = shifts.reduce((a, x) => a + (+x.miles || 0) * irsRate(x.date), 0);
+  $('#tax-body').innerHTML = `
+    <div class="card">
+      <div class="card-h"><span>${y} mileage deduction</span></div>
+      <div class="hero-num" style="font-size:44px">${money(ded)}</div>
+      <p class="fine" style="margin:4px 2px 0">${num(miles, 0)} business miles × the IRS standard rate. This comes off your taxable income.</p>
+    </div>
+    ${lockedCard('taxes', `<table class="kv"><tr><td>Earnings</td><td>$4,812</td></tr><tr><td>Deductions</td><td>−$2,977</td></tr><tr><td>Estimated tax</td><td>$498</td></tr></table>`)}
+    ${lockedCard('reports')}
+    <p class="fine">Estimates only, not tax advice.</p>`;
+}
+function loadScript(src) {
+  return new Promise((ok, bad) => {
+    if ([...document.scripts].some((x) => x.getAttribute('src') === src)) return ok();
+    const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = () => bad(new Error('Could not load ' + src));
+    document.head.appendChild(el);
+  });
+}
+/* IRS-ready PDF (Pro): tax summary page plus a dated mileage log. */
+// the PDF's built-in font has no U+2212 minus sign, so use a plain hyphen there
+const pdfMoney = (v, dp) => money(v, dp).replace('\u2212', '-');
+async function exportPdf(year) {
+  if (!requirePro('reports')) return;
+  await loadScript('vendor/jspdf.umd.min.js');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const r = taxYear(year), d = r.d, W = 612, M = 54, BOTTOM = 730;
+  let y = 70;
+  const line = () => { doc.setDrawColor(220); doc.line(M, y + 6, W - M, y + 6); };
+  const row = (label, value, bold) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 12 : 10.5); doc.text(String(label), M, y); doc.text(String(value), W - M, y, { align: 'right' }); line(); y += 22; };
+  const heading = (t) => { if (y > BOTTOM - 80) { doc.addPage(); y = 70; } y += 10; doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.text(t, M, y); y += 22; };
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.text(`${year} gig driving tax summary`, M, y); y += 20;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(110);
+  doc.text(`${Cloud.user ? Cloud.user.email + ' · ' : ''}Prepared by MileMoney on ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, M, y);
+  doc.setTextColor(0); y += 26;
+  heading('Summary');
+  row('Gross earnings (pay + tips)', pdfMoney(r.t.gross));
+  row('Business miles', num(r.t.miles, 1));
+  row('Deduction method', r.method === 'actual' ? 'Actual expenses' : 'Standard mileage rate');
+  if (r.method === 'standard') row('Mileage deduction', '-' + pdfMoney(d.mileage));
+  else row(`Car costs × ${Math.round(d.vehiclePct * 100)}% business use`, '-' + pdfMoney(d.vehicleCosts * d.vehiclePct));
+  if (d.always) row('Tolls & parking', '-' + pdfMoney(d.always));
+  if (d.loanInterest) row('Car loan interest (business share)', '-' + pdfMoney(d.loanInterest * d.vehiclePct));
+  if (d.other) row('Phone, supplies & other (business share)', '-' + pdfMoney(d.other));
+  row('Net profit (Schedule C)', pdfMoney(r.profit), true);
+  row('Self-employment tax (est.)', pdfMoney(r.se));
+  row(`Federal income tax (est., ${+db.settings.bracket || 0}%)`, pdfMoney(r.fed));
+  row(`State income tax (est., ${+db.settings.state || 0}%)`, pdfMoney(r.st));
+  row('Estimated total tax', pdfMoney(r.total), true);
+  const apps = {};
+  for (const sh of r.shifts) { const a = (apps[sh.platform] ||= { g: 0, m: 0 }); a.g += gross(sh); a.m += +sh.miles || 0; }
+  heading('Earnings by app (match these to each app\'s 1099)');
+  for (const [k, v] of Object.entries(apps).sort((a, b) => b[1].g - a[1].g)) row(`${k} · ${num(v.m, 0)} mi`, pdfMoney(v.g));
+  const cats = Object.entries(d.byCat).sort((a, b) => b[1].amount - a[1].amount);
+  if (cats.length) { heading('Expenses by category'); for (const [id, v] of cats) row(`${(CAT[id] || CAT.otherbiz).name} (${v.count})`, pdfMoney(v.amount)); }
+  // mileage log
+  doc.addPage(); y = 70;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text(`${year} mileage log`, M, y); y += 18;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(110);
+  doc.text('Business miles driven for gig delivery and rideshare work, recorded in MileMoney.', M, y); doc.setTextColor(0); y += 24;
+  const cols = [[M, 'Date'], [M + 80, 'Business purpose'], [M + 300, 'Hours'], [M + 360, 'Miles'], [M + 420, 'Rate'], [W - M, 'Deduction']];
+  const head = () => { doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); cols.forEach(([x, t], i) => doc.text(t, x, y, i >= 2 ? { align: i === 5 ? 'right' : 'left' } : undefined)); line(); y += 18; doc.setFont('helvetica', 'normal'); };
+  head();
+  let totMi = 0, totDed = 0;
+  for (const sh of [...r.shifts].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (y > BOTTOM) { doc.addPage(); y = 70; head(); }
+    const rate = irsRate(sh.date), mi = +sh.miles || 0; totMi += mi; totDed += mi * rate;
+    doc.text(sh.date, M, y); doc.text(`Gig work: ${sh.platform}`.slice(0, 40), M + 80, y); doc.text(num(+sh.hours || 0), M + 300, y);
+    doc.text(num(mi), M + 360, y); doc.text('$' + rate.toFixed(3), M + 420, y); doc.text(pdfMoney(mi * rate), W - M, y, { align: 'right' }); y += 15;
+  }
+  y += 6; doc.setFont('helvetica', 'bold'); doc.text('Total', M, y); doc.text(num(totMi), M + 360, y); doc.text(pdfMoney(totDed), W - M, y, { align: 'right' });
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(130);
+    doc.text('Estimates only, not tax advice. Keep receipts and your own records. Review with a tax professional before filing.', M, 760);
+    doc.text(`Page ${i} of ${pages}`, W - M, 760, { align: 'right' }); doc.setTextColor(0);
+  }
+  await download(`milemoney-${year}-tax-report.pdf`, doc.output('datauristring').split(',')[1], 'application/pdf', true);
 }
 $('#tax-year').onchange = (e) => { ui.year = +e.target.value; renderTaxes(); };
 
 function csvCell(v) { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
 async function exportCsv() {
+  if (!requirePro('reports')) return;
   const lines = [['type', 'date', 'app_or_category', 'hours', 'miles', 'pay', 'tips', 'gross_or_amount', 'orders', 'gallons', 'business_pct', 'irs_rate', 'mileage_deduction', 'notes']];
   for (const s of [...db.shifts].sort((a, b) => a.date.localeCompare(b.date))) {
     const r = irsRate(s.date);
@@ -276,16 +454,17 @@ async function exportCsv() {
   }
   await download(`milemoney-${ymd(new Date())}.csv`, lines.map((l) => l.map(csvCell).join(',')).join('\n'), 'text/csv');
 }
-async function download(name, text, type) {
+async function download(name, text, type, isBase64 = false) {
   if (NATIVE) {
     try {
-      const { uri } = await Filesystem.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
+      const { uri } = await Filesystem.writeFile({ path: name, data: text, directory: 'CACHE', ...(isBase64 ? {} : { encoding: 'utf8' }) });
       await Share.share({ title: name, files: [uri] });
     } catch (e) { if (!/cancel/i.test(e.message || '')) toast('Could not export: ' + e.message); }
     return;
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
+  const bytes = isBase64 ? Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0)) : text;
+  a.href = URL.createObjectURL(new Blob([bytes], { type }));
   a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
@@ -332,17 +511,18 @@ function renderAccount() {
     };
   } else {
     const st = Cloud.status;
-    const line = st.state === 'syncing' ? 'Syncing…' : st.state === 'error' ? 'Sync problem: ' + esc(st.error) : st.state === 'offline' ? 'Offline. Changes will sync when you reconnect.'
+    const pro = Pro.active;
+    const line = !pro ? 'Cloud backup & sync is part of Pro' : st.state === 'syncing' ? 'Syncing…' : st.state === 'error' ? 'Sync problem: ' + esc(st.error) : st.state === 'offline' ? 'Offline. Changes will sync when you reconnect.'
       : st.at ? `Synced ${timeAgo(st.at)}` : 'Not synced yet';
     box.innerHTML = `<div class="card">
       <div class="row" style="padding-top:0"><span class="badge">${esc(Cloud.user.email[0].toUpperCase())}</span>
         <div class="grow"><div class="t">${esc(Cloud.user.email)}</div><div class="m">${line}</div></div></div>
-      <button class="btn press" id="sync-now">Sync now</button>
+      ${pro ? '<button class="btn press" id="sync-now">Sync now</button>' : `<button class="btn solid press" data-pro="sync">${ICON.lock} Turn on cloud sync</button>`}
       <button class="btn ghost press" id="sign-out">Sign out</button>
     </div>`;
-    $('#sync-now').onclick = () => Cloud.syncNow();
+    const sn = $('#sync-now'); if (sn) sn.onclick = () => Cloud.syncNow();
     $('#sign-out').onclick = async () => {
-      if (!confirm('Sign out? Your data stays in your account and is removed from this phone.')) return;
+      if (!confirm(pro ? 'Sign out? Your data stays in your account and is removed from this phone.' : 'Sign out? Your data stays on this phone.')) return;
       await Cloud.signOut(); render(); toast('Signed out');
     };
   }
@@ -354,13 +534,13 @@ function renderProCard() {
   if (Pro.active) {
     const until = Pro.expires ? new Date(Pro.expires).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
     box.insertAdjacentHTML('afterbegin', `<div class="card"><div class="row" style="padding:0"><span class="badge" style="background:var(--inv-bg);color:var(--inv-fg);border:0">${ICON.spark}</span>
-      <div class="grow"><div class="t">MileMoney Pro</div><div class="m">No ads${until ? ` · ${Pro.willRenew ? 'renews' : 'ends'} ${until}` : ''}</div></div></div>
+      <div class="grow"><div class="t">MileMoney Pro</div><div class="m">All features unlocked${until ? ` · ${Pro.willRenew ? 'renews' : 'ends'} ${until}` : ''}</div></div></div>
       <a class="btn press" href="${esc(Pro.manageUrl)}" target="_blank" rel="noopener">Manage subscription</a></div>`);
   } else {
     box.insertAdjacentHTML('afterbegin', `<div class="card"><div class="row" style="padding:0"><span class="badge" style="background:var(--inv-bg);color:var(--inv-fg);border:0">${ICON.spark}</span>
-      <div class="grow"><div class="t">Go Pro</div><div class="m">Remove all ads from MileMoney</div></div></div>
-      <button class="btn solid press" id="go-pro">See plans</button></div>`);
-    $('#go-pro').onclick = openPaywall;
+      <div class="grow"><div class="t">Go Pro</div><div class="m">AI receipt scanner, tax center, reports, sync and no ads</div></div></div>
+      <button class="btn solid press" id="go-pro">See what's included</button></div>`);
+    $('#go-pro').onclick = () => openPaywall();
   }
 }
 
@@ -372,16 +552,16 @@ function trialText(p) {
   const unit = String(i.periodUnit || '').toLowerCase().replace(/s$/, '');
   return `${i.periodNumberOfUnits} ${unit}${i.periodNumberOfUnits > 1 ? 's' : ''} free`;
 }
-function openPaywall() {
-  if (!Pro.enabled) { toast('Subscriptions are available in the MileMoney phone app'); return; }
+function openPaywall(feature) {
+  if (!Pro.enabled) { toast(`${feature && PRO_FEATURES[feature] ? PRO_FEATURES[feature][0] + ' is' : 'Pro is'} available in the MileMoney phone app`); return; }
   const L = (MM.legal || {});
   const store = PLATFORM === 'ios' ? 'Apple ID' : 'Google Play account';
-  openSheet(`<div class="pro-hero"><div class="pro-mark">${ICON.spark}</div><h2>MileMoney Pro</h2><p>Every feature, zero ads.</p></div>
-    <ul class="perks">
-      <li>${ICON.check}No banner ads</li>
-      <li>${ICON.check}No full-screen ads after you save</li>
-      <li>${ICON.check}Keeps MileMoney independent and improving</li>
-    </ul>
+  const f = feature && PRO_FEATURES[feature];
+  const order = ['scan', 'receipts', 'taxes', 'reports', 'insights', 'goals', 'sync', 'noads'];
+  if (f) order.splice(order.indexOf(feature), 1), order.unshift(feature);
+  openSheet(`<div class="pro-hero"><div class="pro-mark">${ICON.spark}</div><h2>${f ? `Unlock ${f[0].toLowerCase()}` : 'MileMoney Pro'}</h2>
+      <p>${f ? 'It\'s part of MileMoney Pro, along with everything below.' : 'Spend less time on paperwork. Keep more of what you earn.'}</p></div>
+    <ul class="perks">${order.map((k, i) => `<li class="${i === 0 && f ? 'hl' : ''}">${ICON.check}<div><b>${PRO_FEATURES[k][0]}</b><span>${PRO_FEATURES[k][1]}</span></div></li>`).join('')}</ul>
     <div id="plans"><div class="skeleton"></div><div class="skeleton"></div></div>
     <button class="btn solid press" id="buy" disabled>Continue</button>
     <button class="linkbtn" id="restore" style="display:block;margin:8px auto 0">Restore purchases</button>
@@ -564,11 +744,13 @@ $('#add-btn').onclick = () => {
   openSheet(`<h2>Add</h2>
     <button class="menu-btn press" data-a="track"><span class="badge">${on ? ICON.stop : ICON.play}</span><div><b>${on ? 'End shift' : 'Start shift'}</b><span>${on ? 'Stop GPS and save the shift' : 'Count miles with GPS while you drive'}</span></div></button>
     <button class="menu-btn press" data-a="shift"><span class="badge">${ICON.pin}</span><div><b>Log a shift</b><span>Earnings, hours and miles</span></div></button>
+    <button class="menu-btn press" data-a="scan"><span class="badge">${ICON.camera}</span><div><b>Scan a receipt ${Pro.active ? '' : proTag}</b><span>AI fills in the expense for you</span></div></button>
     <button class="menu-btn press" data-a="expense"><span class="badge">${ICON.receipt}</span><div><b>Add an expense</b><span>Gas, oil change, tires, phone bill…</span></div></button>`, (b) => {
     b.onclick = (e) => {
       const a = e.target.closest('[data-a]'); if (!a) return;
       closeSheet();
-      setTimeout(() => (a.dataset.a === 'track' ? toggleTracker() : a.dataset.a === 'shift' ? shiftForm() : expenseForm()), REDUCED ? 0 : 280);
+      const go = { track: toggleTracker, shift: () => shiftForm(), expense: () => expenseForm(), scan: () => { if (requirePro('scan')) expenseForm(null, 'camera'); } }[a.dataset.a];
+      setTimeout(go, REDUCED ? 0 : 280);
     };
   });
 };
@@ -613,11 +795,19 @@ function shiftForm(s) {
   });
 }
 
-function expenseForm(x) {
+function expenseForm(x, autoScan) {
   const r = x || { date: ymd(new Date()), cat: 'gas' };
-  let cat = r.cat;
+  const eid = (x && x.id) || uid();
+  let cat = r.cat, photo = null, dropPhoto = false;
+  const pro = Pro.active;
   openSheet(`<h2>${x ? 'Edit expense' : 'Add an expense'}</h2>
     <form id="exp-form">
+      <div class="scan-row">
+        <button type="button" class="btn ${pro ? 'solid' : ''} press" id="scan-cam">${ICON.camera} Scan receipt ${pro ? '' : proTag}</button>
+        <button type="button" class="btn press scan-pick" id="scan-pick" aria-label="Choose a receipt photo">${ICON.image}</button>
+      </div>
+      <div class="rcpt" id="rcpt" hidden><img alt="Receipt photo"><div class="rcpt-busy"><span></span>Reading receipt…</div>
+        <button type="button" class="rcpt-x press" id="rcpt-x" aria-label="Remove photo">✕</button></div>
       ${chips('cat', CATS.map((c) => [c.id, c.name]), cat)}
       <button type="button" class="linkbtn" id="more-cats" style="margin:-8px 0 8px">More categories</button>
       <p class="hint" id="rule"></p>
@@ -636,6 +826,39 @@ function expenseForm(x) {
       if (c.group === 'other' && (!x || x.cat !== cat)) $('[name=pct]', b).value = c.pct ?? 100;
     };
     bindChips(b, 'cat', (v) => { cat = v; update(); });
+    const pick = (id) => { const ch = $(`[data-chips=cat] .chip[data-v="${id}"]`, b); if (ch) { $$('[data-chips=cat] .chip', b).forEach((c) => c.classList.toggle('on', c === ch)); ch.hidden = false; } cat = id; update(); };
+
+    // receipt photo + AI scan (Pro)
+    const box = $('#rcpt', b), img = $('img', box);
+    const showPhoto = (blob) => { if (img.src) URL.revokeObjectURL(img.src); img.src = URL.createObjectURL(blob); box.hidden = false; };
+    if (x && x.receipt) Receipts.get(x).then((blob) => { if (blob) showPhoto(blob); });
+    img.onclick = () => viewPhoto(img.src);
+    $('#rcpt-x', b).onclick = () => { photo = null; dropPhoto = true; box.hidden = true; };
+    const fill = (rc) => {
+      const f = $('#exp-form', b);
+      if (rc.total != null) f.amount.value = (+rc.total).toFixed(2);
+      if (rc.date) f.date.value = rc.date;
+      if (rc.category && CAT[rc.category]) pick(rc.category);
+      if (rc.gallons != null && f.gallons) f.gallons.value = rc.gallons;
+      if (rc.note || rc.merchant) f.note.value = (rc.note || rc.merchant).slice(0, 120);
+    };
+    const scan = async (source) => {
+      if (!requirePro('scan')) return;
+      let blob;
+      try { blob = await Receipts.capture(source); } catch (e) { if (!/cancel/i.test(e.message || '')) toast('Could not open the camera: ' + e.message); return; }
+      if (!blob) return;
+      photo = blob; dropPhoto = false; showPhoto(blob);
+      if (!Cloud.enabled) { toast('Photo added'); return; }
+      if (!Cloud.user) { toast('Photo added. Sign in on the Account tab to have it filled in automatically.'); return; }
+      box.classList.add('busy');
+      try { fill(await Cloud.scanReceipt(await Receipts.toBase64(blob), 'image/jpeg')); toast('Filled in from your receipt. Give it a quick check.'); haptic(); }
+      catch (e) { toast(e.message); }
+      finally { box.classList.remove('busy'); }
+    };
+    $('#scan-cam', b).onclick = () => scan('camera');
+    $('#scan-pick', b).onclick = () => scan('gallery');
+    if (autoScan) setTimeout(() => scan(autoScan), REDUCED ? 0 : 350);
+
     // keep the sheet short: everyday categories first, the rest behind "More categories"
     const COMMON = ['gas', 'oil', 'tires', 'repairs', 'phone', 'tolls', 'parking', 'meals'];
     const more = $('#more-cats', b);
@@ -646,18 +869,32 @@ function expenseForm(x) {
     more.onclick = () => showAll(true);
     showAll(false);
     update();
-    $('#exp-form', b).onsubmit = (e) => {
+    $('#exp-form', b).onsubmit = async (e) => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target));
       const c = CAT[cat];
-      putRecord('expense', { id: x && x.id, date: f.date, cat, amount: +f.amount || 0, note: f.note || '',
+      let receipt = x && x.receipt && !dropPhoto ? x.receipt : undefined;
+      if (photo) { try { receipt = await Receipts.attach(eid, photo); } catch (err) { toast('Could not save the photo: ' + err.message); } }
+      else if (dropPhoto && x && x.receipt) Receipts.remove(x);
+      const rec = { id: eid, date: f.date, cat, amount: +f.amount || 0, note: f.note || '',
         ...(cat === 'gas' && +f.gallons ? { gallons: +f.gallons } : {}),
-        ...(c.group === 'other' ? { pct: Math.min(100, Math.max(0, +f.pct || 0)) } : {}) });
+        ...(c.group === 'other' ? { pct: Math.min(100, Math.max(0, +f.pct || 0)) } : {}),
+        ...(receipt ? { receipt } : {}) };
+      putRecord('expense', rec);
+      if (photo) Receipts.upload(rec).catch(() => {});
       closeSheet(); render(); toast('Expense saved'); Ads.afterSave();
     };
     const del = $('#del', b);
-    if (del) del.onclick = () => { if (confirm('Delete this expense?')) { removeRecord('expense', x.id); closeSheet(); render(); toast('Expense deleted'); } };
+    if (del) del.onclick = () => { if (confirm('Delete this expense?')) { if (x.receipt) Receipts.remove(x); removeRecord('expense', x.id); closeSheet(); render(); toast('Expense deleted'); } };
   });
+}
+
+function viewPhoto(src) {
+  if (!src) return;
+  const v = document.createElement('div');
+  v.className = 'viewer'; v.innerHTML = `<img src="${src}" alt="Receipt photo"><button class="viewer-x press" aria-label="Close">✕</button>`;
+  v.onclick = () => { v.classList.remove('show'); setTimeout(() => v.remove(), 250); };
+  document.body.appendChild(v); requestAnimationFrame(() => v.classList.add('show'));
 }
 
 /* ---------- GPS tracker ---------- */
@@ -752,7 +989,7 @@ document.addEventListener('visibilitychange', async () => {
 function renderSyncPill() {
   $('#remove-ads').hidden = !(Pro.enabled && Ads.showing);
   const p = $('#sync-pill');
-  if (!Cloud.enabled || !Cloud.user) { p.hidden = true; return; }
+  if (!Cloud.enabled || !Cloud.user || !Pro.active) { p.hidden = true; return; }
   const st = Cloud.status; p.hidden = false;
   p.classList.toggle('busy', st.state === 'syncing');
   p.textContent = st.state === 'syncing' ? 'Syncing' : st.state === 'error' ? 'Sync issue' : st.state === 'offline' ? 'Offline' : 'Synced';
@@ -771,9 +1008,10 @@ Cloud.on(() => {
   const u = Cloud.user && Cloud.user.id;
   if (u !== lastUser) { lastUser = u; Pro.identify(u); if (ui.view === 'account') renderSettings(); } // show or hide "Delete my account"
   if (ui.view === 'account') renderAccount();
+  if (Cloud.status.state === 'ok') Receipts.flush();
 });
 Cloud.onRemoteChange = () => { applyTheme(); render(); };
-Pro.on(() => { render(); });
+Pro.on(() => { render(); if (Pro.active) { Cloud.syncNow(); Receipts.flush(); } });
 
 (async function boot() {
   if (NATIVE) { document.documentElement.classList.add('native'); await loadNative(); }

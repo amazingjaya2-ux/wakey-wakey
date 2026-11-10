@@ -11,6 +11,7 @@ const Cloud = (() => {
   }) : null;
 
   let user = null;
+  const pending = () => Object.keys(db.sync.dirty).length + Object.keys(db.sync.deleted).length;
   let running = null;
   let again = false;
   let timer = null;
@@ -54,7 +55,7 @@ const Cloud = (() => {
   }
 
   function schedule() {
-    if (!user) return;
+    if (!user || !proOk()) return;
     clearTimeout(timer);
     timer = setTimeout(syncNow, 1500);
   }
@@ -126,8 +127,10 @@ const Cloud = (() => {
     return changed;
   }
 
+  const proOk = () => typeof Pro === 'undefined' || Pro.active;
   function syncNow() {
     if (!sb || !user) return Promise.resolve();
+    if (!proOk()) { status.state = 'locked'; emit(); return Promise.resolve(); }
     if (running) { again = true; return running; }
     if (!navigator.onLine) { status.state = 'offline'; emit(); return Promise.resolve(); }
     status.state = 'syncing'; emit();
@@ -161,17 +164,67 @@ const Cloud = (() => {
     const { error } = await sb.auth.resetPasswordForEmail(email);
     if (error) throw error;
   }
+  // Data is only removed from the phone when it is safely in the cloud (Pro sync).
+  // Free users keep everything on the phone when they sign out.
+  const synced = () => proOk() && status.state === 'ok' && pending() === 0;
+  function detach() { db.sync.userId = null; db.sync.lastPull = null; save(); }
   async function signOut() {
     try { await syncNow(); } catch (_) { /* best effort */ }
+    const clear = synced();
     await sb.auth.signOut();
-    resetLocal(); // the data is safe in the cloud; don't leave it on a shared phone
+    if (clear) resetLocal(); else detach();
     user = null; emit();
+    return clear;
   }
+
+  /* ---------- receipt photos (Pro): receipts/<user id>/<expense id>.jpg ---------- */
+  const bucket = () => sb.storage.from('receipts');
+  const receiptPath = (id) => `${user.id}/${id}.jpg`;
+  async function uploadReceipt(id, blob) {
+    const { error } = await bucket().upload(receiptPath(id), blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+    if (error) throw error;
+  }
+  async function downloadReceipt(id) {
+    const { data, error } = await bucket().download(receiptPath(id));
+    if (error) throw error;
+    return data;
+  }
+  async function removeReceipt(id) {
+    const { error } = await bucket().remove([receiptPath(id)]);
+    if (error) throw error;
+  }
+  async function removeAllReceipts() {
+    for (;;) {
+      const { data, error } = await bucket().list(user.id, { limit: 100 });
+      if (error) throw error;
+      if (!data || !data.length) return;
+      const { error: e2 } = await bucket().remove(data.map((f) => `${user.id}/${f.name}`));
+      if (e2) throw e2;
+    }
+  }
+
+  /* ---------- AI receipt scanner (Pro, runs in the scan-receipt edge function) ---------- */
+  async function scanReceipt(base64, mediaType) {
+    const { data } = await sb.auth.getSession();
+    const token = data && data.session && data.session.access_token;
+    if (!token) { const e = new Error('Sign in to use the receipt scanner'); e.code = 'sign_in_required'; throw e; }
+    const res = await fetch(`${cfg.supabaseUrl}/functions/v1/scan-receipt`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, apikey: cfg.supabaseAnonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mediaType, today: ymd(new Date()) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(body.message || 'The scanner had a problem. Try again.'); e.code = body.error || 'error'; throw e; }
+    return body.receipt;
+  }
+
   async function deleteAccount() {
+    await removeAllReceipts(); // storage files are not removed by deleting the user row
     const { error } = await sb.rpc('delete_my_account');
     if (error) throw error;
+    const clear = proOk();
     await sb.auth.signOut().catch(() => {});
-    resetLocal();
+    if (clear) resetLocal(); else detach();
     user = null; emit();
   }
 
@@ -179,7 +232,8 @@ const Cloud = (() => {
     enabled, init, syncNow, schedule, signUp, signIn, signOut, resetPassword, deleteAccount,
     get user() { return user; },
     status,
-    pending: () => Object.keys(db.sync.dirty).length + Object.keys(db.sync.deleted).length,
+    pending,
+    uploadReceipt, downloadReceipt, removeReceipt, scanReceipt,
     on: (f) => listeners.add(f),
     onRemoteChange: () => {},
     _client: sb,

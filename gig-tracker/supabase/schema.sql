@@ -41,3 +41,44 @@ language sql security definer set search_path = '' as $$
 $$;
 revoke all on function public.delete_my_account() from public, anon;
 grant execute on function public.delete_my_account() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Pro: receipt photos. Private bucket; each user can only touch files under
+-- their own folder: receipts/<user id>/<expense id>.jpg
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+
+drop policy if exists "Receipts: read own" on storage.objects;
+create policy "Receipts: read own" on storage.objects for select to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = (select auth.uid())::text);
+drop policy if exists "Receipts: add own" on storage.objects;
+create policy "Receipts: add own" on storage.objects for insert to authenticated
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = (select auth.uid())::text);
+drop policy if exists "Receipts: replace own" on storage.objects;
+create policy "Receipts: replace own" on storage.objects for update to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = (select auth.uid())::text)
+  with check (bucket_id = 'receipts' and (storage.foldername(name))[1] = (select auth.uid())::text);
+drop policy if exists "Receipts: delete own" on storage.objects;
+create policy "Receipts: delete own" on storage.objects for delete to authenticated
+  using (bucket_id = 'receipts' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+-- ---------------------------------------------------------------------------
+-- Pro: AI receipt scanner usage counter (daily limit per user). Only the
+-- scan-receipt edge function (service role) can call this; the app cannot.
+create table if not exists public.ai_usage (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  day     date not null default current_date,
+  scans   integer not null default 0,
+  primary key (user_id, day)
+);
+alter table public.ai_usage enable row level security; -- no policies: invisible to app users
+
+create or replace function public.bump_ai_usage(p_user uuid) returns integer
+language sql security definer set search_path = '' as $$
+  insert into public.ai_usage (user_id, day, scans) values (p_user, current_date, 1)
+  on conflict (user_id, day) do update set scans = public.ai_usage.scans + 1
+  returning scans;
+$$;
+revoke all on function public.bump_ai_usage(uuid) from public, anon, authenticated;
+grant execute on function public.bump_ai_usage(uuid) to service_role;

@@ -13,6 +13,7 @@ const Pro = (() => {
   const key = PLATFORM === 'ios' ? cfg.appleApiKey : PLATFORM === 'android' ? cfg.googleApiKey : '';
   const enabled = !!(Purchases && key);
   const ENT = cfg.entitlement || 'pro';
+  const devUnlock = cfg.devUnlockPro === true;
   const CACHE = 'milemoney.pro';
   let active = false;
   try { active = localStorage.getItem(CACHE) === '1'; } catch (_) { /* no storage */ }
@@ -72,7 +73,7 @@ const Pro = (() => {
 
   return {
     enabled, init, identify, packages, buy, restore,
-    get active() { return active; },
+    get active() { return active || devUnlock; },
     get manageUrl() { return (info && info.managementURL) || (PLATFORM === 'ios' ? 'https://apps.apple.com/account/subscriptions' : 'https://play.google.com/store/account/subscriptions'); },
     get expires() { const e = info && info.entitlements && info.entitlements.active && info.entitlements.active[ENT]; return e ? e.expirationDate : null; },
     get willRenew() { const e = info && info.entitlements && info.entitlements.active && info.entitlements.active[ENT]; return e ? e.willRenew : false; },

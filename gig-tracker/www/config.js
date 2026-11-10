@@ -11,7 +11,10 @@ window.MILEMONEY_CONFIG = {
   revenueCat: {
     appleApiKey: '',   // starts with appl_
     googleApiKey: '',  // starts with goog_
-    entitlement: 'pro', // the entitlement that removes ads
+    entitlement: 'pro', // the entitlement that unlocks Pro features and removes ads
+    // Unlocks every Pro feature without a subscription, for trying the app before RevenueCat is
+    // set up. Must be false in any build you publish.
+    devUnlockPro: false,
   },
 
   // Ads (Google AdMob > Apps > Ad units). While useTestAds is true the app shows Google's
