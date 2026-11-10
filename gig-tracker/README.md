@@ -32,6 +32,7 @@ Built with [Capacitor](https://capacitorjs.com), so the same code ships as an **
 | Core stats: hours, miles, orders, $/hour, $/mile, $/order | ✓ | ✓ |
 | IRS mileage deduction for the year | ✓ | ✓ |
 | Back up / restore to a file | ✓ | ✓ |
+| **Automatic drive detection**: miles are logged whenever you drive, even if you forget to start a shift | | ✓ |
 | **AI receipt scanner**: snap a receipt, Claude fills in amount, date, category, gallons | | ✓ |
 | **Receipt photos** saved with each expense and backed up | | ✓ |
 | **Full tax center**: estimate, standard vs actual comparison, quarterly set-asides | | ✓ |
@@ -50,6 +51,7 @@ Tapping any Pro feature opens the paywall headed by that feature.
 | `www/` | The app (HTML/CSS/JS). `store.js` = data and tax math, `sync.js` = accounts and sync, `app.js` = screens |
 | `www/config.js` | Public keys for Supabase, RevenueCat and AdMob, plus your privacy/terms links |
 | `www/monetize.js` | Subscriptions (RevenueCat) and ads (AdMob) |
+| `www/autotrack.js` | Automatic drive detection (background GPS state machine) |
 | `www/receipts.js` | Receipt photos: camera, shrinking, on-phone storage, cloud backup |
 | `supabase/functions/scan-receipt/` | Server function that reads receipts with Claude (Pro only, checked on the server) |
 | `supabase/schema.sql` | Database table, security rules and account deletion. Run it once in Supabase |
@@ -67,6 +69,23 @@ Tapping any Pro feature opens the paywall headed by that feature.
 5. Run `npm run sync` and rebuild the app.
 
 Without step 3 the app runs in local-only mode: everything works, but there are no accounts.
+
+## Automatic drive detection (Pro)
+Turn on **Auto-detect drives** under the Start shift button. MileMoney then watches GPS in the background:
+- A drive starts when the phone is clearly moving at driving speed (faster than walking or jogging, more than
+  250 m from where it was parked). GPS drift while parked and walking around are ignored.
+- A drive ends after 5 minutes without moving (for example, waiting at a restaurant). Drives under 0.3 miles are dropped.
+- Each finished drive sends a notification and waits in **Drives to review** on the Overview. Select the work
+  drives to log them as one shift (miles, time and a note are filled in), or mark them personal.
+- It pauses while a manual shift is being tracked, so miles are never counted twice.
+
+Things to know:
+- **Battery:** continuous background GPS uses noticeably more battery. It only updates every 30 m of movement,
+  and drivers can switch it off any time.
+- **Android** shows a "watching for drives" notification while it's on (Android requires this for background location).
+- **App review:** Google Play requires a background-location declaration with a short video of the feature,
+  and Apple asks why the app needs "Always" location. The answer for both: it logs business mileage
+  automatically for tax deductions. Detected drives are stored only on the phone.
 
 ## Turn on the AI receipt scanner
 The scanner runs on your server (a Supabase Edge Function) so your Claude API key never ships inside the app.

@@ -111,6 +111,7 @@ const PRO_FEATURES = {
   insights: ['Deeper insights', 'Best apps, best days and 8-week trends.'],
   goals: ['Weekly goals', 'Set a target and watch your progress ring fill.'],
   sync: ['Cloud backup & sync', 'Your data safe online and on all your phones.'],
+  autotrack: ['Automatic drive detection', 'Miles are logged when you drive, even if you forget to start a shift.'],
   noads: ['No ads', 'No banners and no full-screen ads.'],
 };
 function requirePro(key) {
@@ -139,6 +140,7 @@ function renderHome() {
   $('#hero-label').textContent = { today: 'Earned today', week: 'Earned this week', month: 'Earned this month', year: 'Earned this year', all: 'Earned all time' }[ui.period];
   animateNumber($('#k-gross'), t.gross);
   const pro = Pro.active;
+  renderAuto();
   $('#k-net').textContent = !(t.gross || t.spent) ? 'Start a shift or tap + to log one'
     : pro ? `${money(t.net)} take-home after expenses & taxes` : `${num(t.miles, 0)} miles · ${num(t.hours)} hours`;
   const mpgVal = recentMpg();
@@ -189,6 +191,84 @@ function renderHome() {
 
 function fakeBars() {
   return `<svg viewBox="0 0 320 90">${[40, 62, 35, 70, 55, 80, 48, 66].map((h, i) => `<rect x="${i * 40 + 6}" y="${90 - h}" width="28" height="${h}" rx="5" class="fake-bar"/>`).join('')}</svg>`;
+}
+
+/* Automatic drive detection (Pro): switch under the tracker, and an inbox of detected drives. */
+function renderAuto() {
+  const row = $('#auto-row');
+  const pro = Pro.active, on = pro && AutoTrack.on;
+  const drv = on && AutoTrack.driving;
+  const sub = !pro ? 'Logs miles when you drive, even if you forget' : db.track ? 'Paused while your shift is being tracked'
+    : drv ? `Driving now · ${num(drv.miles, 1)} mi` : on ? 'Watching for drives in the background' : 'Logs miles when you drive, even if you forget';
+  row.innerHTML = `<button type="button" class="auto-row press" id="auto-toggle" role="switch" aria-checked="${on}">
+    <div><b>Auto-detect drives ${pro ? '' : proTag}</b><span class="${drv ? 'live' : ''}">${sub}</span></div>
+    <span class="switch${on ? ' on' : ''}"><i></i></span></button>`;
+  $('#auto-toggle').onclick = async () => {
+    if (!requirePro('autotrack')) return;
+    haptic();
+    if (AutoTrack.on) { await AutoTrack.disable(); toast('Drive detection off'); }
+    else if (await AutoTrack.enable()) toast(db.track ? 'Drive detection will start after this shift' : 'Watching for drives');
+    renderAuto();
+  };
+  const drives = pro ? (db.drives || []) : [];
+  const card = $('#drives-card');
+  if (!drives.length) { card.innerHTML = ''; return; }
+  const mi = drives.reduce((a, d) => a + d.miles, 0);
+  card.innerHTML = `<button type="button" class="card drives-cta press" id="drives-open"><span class="badge">${ICON.car}</span>
+    <div class="grow"><b>${drives.length} drive${drives.length === 1 ? '' : 's'} to review</b><span>${num(mi, 1)} miles detected · tap to log them</span></div>
+    <span class="count">${drives.length}</span></button>`;
+  $('#drives-open').onclick = drivesSheet;
+}
+AutoTrack.on_(() => { if (ui.view === 'home') renderAuto(); });
+
+function routeSvg(path) {
+  if (!path || path.length < 2) return '';
+  const lats = path.map((p) => p[0]), lons = path.map((p) => p[1]);
+  const midLat = (Math.max(...lats) + Math.min(...lats)) / 2, kx = Math.cos(midLat * Math.PI / 180);
+  const xs = lons.map((x) => x * kx), minX = Math.min(...xs), minY = Math.min(...lats);
+  const rx = Math.max(...xs) - minX, ry = Math.max(...lats) - minY, span = Math.max(rx, ry) || 1e-6;
+  const ox = (span - rx) / 2, oy = (span - ry) / 2; // center the shorter side
+  const pt = (i) => [6 + (xs[i] - minX + ox) / span * 52, 58 - (lats[i] - minY + oy) / span * 52];
+  const d = path.map((_, i) => pt(i).map((v) => v.toFixed(1)).join(',')).join(' ');
+  const [sx, sy] = pt(0), [ex, ey] = pt(path.length - 1);
+  return `<svg class="route" viewBox="0 0 64 64" aria-hidden="true"><polyline points="${d}"/><circle cx="${sx}" cy="${sy}" r="3" class="r-start"/><circle cx="${ex}" cy="${ey}" r="3.5" class="r-end"/></svg>`;
+}
+const clock = (t) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+function drivesSheet() {
+  const list = [...(db.drives || [])].sort((a, b) => a.start - b.start);
+  if (!list.length) return;
+  const sel = new Set(list.filter((d) => d.date === list[0].date).map((d) => d.id)); // first day selected
+  openSheet(`<h2>Detected drives</h2>
+    <p class="fine" style="margin:-8px 2px 14px">Pick the drives that were for work and log them as one shift. Personal drives aren't counted.</p>
+    <div id="drv-list">${list.map((d, i) => `<button type="button" class="drive press${sel.has(d.id) ? ' on' : ''}" data-id="${esc(d.id)}" style="--i:${i}">
+      ${routeSvg(d.path)}<div class="grow"><b>${num(d.miles, 1)} mi</b><span>${dayLabel(d.date)} · ${clock(d.start)}–${clock(d.end)} · ${Math.max(1, Math.round((d.end - d.start) / 60e3))} min</span></div>
+      <span class="tick"></span></button>`).join('')}</div>
+    <button class="btn solid press" id="drv-work"></button>
+    <button class="btn press" id="drv-personal"></button>`, (b) => {
+    const label = () => {
+      const picked = list.filter((d) => sel.has(d.id)), mi = picked.reduce((a, d) => a + d.miles, 0);
+      $('#drv-work', b).textContent = picked.length ? `Log ${picked.length} as a work shift · ${num(mi, 1)} mi` : 'Select drives to log';
+      $('#drv-work', b).disabled = !picked.length;
+      $('#drv-personal', b).textContent = picked.length ? `Mark ${picked.length} personal` : 'Mark personal';
+      $('#drv-personal', b).disabled = !picked.length;
+    };
+    $('#drv-list', b).onclick = (e) => {
+      const el = e.target.closest('.drive'); if (!el) return;
+      sel.has(el.dataset.id) ? sel.delete(el.dataset.id) : sel.add(el.dataset.id);
+      el.classList.toggle('on'); haptic(); label();
+    };
+    const drop = (ids) => { db.drives = db.drives.filter((d) => !ids.has(d.id)); save(); };
+    $('#drv-personal', b).onclick = () => { const ids = new Set(sel); drop(ids); closeSheet(); render(); toast('Marked personal'); };
+    $('#drv-work', b).onclick = () => {
+      const picked = list.filter((d) => sel.has(d.id)), ids = new Set(sel);
+      const start = Math.min(...picked.map((d) => d.start)), end = Math.max(...picked.map((d) => d.end));
+      const miles = picked.reduce((a, d) => a + d.miles, 0);
+      closeSheet();
+      setTimeout(() => shiftForm({ date: ymd(new Date(start)), hours: ((end - start) / 3.6e6).toFixed(2), miles: miles.toFixed(1), platform: lastPlatform(),
+        notes: `Auto-detected: ${picked.length} drive${picked.length === 1 ? '' : 's'}, ${clock(start)}–${clock(end)}` }, () => drop(ids)), REDUCED ? 0 : 300);
+    };
+    label();
+  });
 }
 
 /* Weekly goal (Pro): a ring that fills as this week's earnings approach the goal. */
@@ -557,7 +637,7 @@ function openPaywall(feature) {
   const L = (MM.legal || {});
   const store = PLATFORM === 'ios' ? 'Apple ID' : 'Google Play account';
   const f = feature && PRO_FEATURES[feature];
-  const order = ['scan', 'receipts', 'taxes', 'reports', 'insights', 'goals', 'sync', 'noads'];
+  const order = ['autotrack', 'scan', 'receipts', 'taxes', 'reports', 'insights', 'goals', 'sync', 'noads'];
   if (f) order.splice(order.indexOf(feature), 1), order.unshift(feature);
   openSheet(`<div class="pro-hero"><div class="pro-mark">${ICON.spark}</div><h2>${f ? `Unlock ${f[0].toLowerCase()}` : 'MileMoney Pro'}</h2>
       <p>${f ? 'It\'s part of MileMoney Pro, along with everything below.' : 'Spend less time on paperwork. Keep more of what you earn.'}</p></div>
@@ -769,7 +849,7 @@ const field = (name, label, val = '', type = 'number', extra = '') =>
   `<label class="field"><span>${label}</span><input name="${name}" type="${type}" ${type === 'number' ? 'inputmode="decimal" step="any" min="0"' : ''} value="${esc(val)}" ${extra}></label>`;
 const lastPlatform = () => (db.shifts.length ? [...db.shifts].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0].platform : 'DoorDash');
 
-function shiftForm(s) {
+function shiftForm(s, onSaved) {
   const r = s || { date: ymd(new Date()), platform: lastPlatform() };
   let platform = r.platform;
   openSheet(`<h2>${s && s.id ? 'Edit shift' : 'Log a shift'}</h2>
@@ -788,7 +868,7 @@ function shiftForm(s) {
       const f = Object.fromEntries(new FormData(e.target));
       putRecord('shift', { id: s && s.id, date: f.date, platform, hours: +f.hours || 0, miles: +f.miles || 0, pay: +f.pay || 0,
         tips: +f.tips || 0, orders: Math.round(+f.orders || 0), notes: f.notes || '', ...(s && s.gas ? { gas: s.gas } : {}), ...(s && s.tolls ? { tolls: s.tolls } : {}) });
-      closeSheet(); render(); toast('Shift saved'); Ads.afterSave();
+      closeSheet(); if (onSaved) onSaved(); render(); toast('Shift saved'); Ads.afterSave();
     };
     const del = $('#del', b);
     if (del) del.onclick = () => { if (confirm('Delete this shift?')) { removeRecord('shift', s.id); closeSheet(); render(); toast('Shift deleted'); } };
@@ -965,18 +1045,20 @@ function renderTracker() {
 async function toggleTracker() {
   haptic();
   if (!db.track) {
+    await AutoTrack.pause();
     db.track = { start: Date.now(), miles: 0, last: null }; save(); renderTracker();
-    if (!(await startWatch())) { db.track = null; save(); }
-    renderTracker();
+    if (!(await startWatch())) { db.track = null; save(); AutoTrack.resume(); }
+    renderTracker(); renderAuto();
     return;
   }
   const t = db.track;
   await stopWatch();
   db.track = null; save(); renderTracker();
+  AutoTrack.resume(); renderAuto();
   shiftForm({ date: ymd(new Date(t.start)), hours: ((Date.now() - t.start) / 3.6e6).toFixed(2), miles: t.miles.toFixed(1), platform: lastPlatform() });
 }
 $('#tracker').onclick = toggleTracker;
-$('#remove-ads').onclick = openPaywall;
+$('#remove-ads').onclick = () => openPaywall('noads');
 $('#tracker').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTracker(); } };
 setInterval(() => db.track && renderTracker(), 30000);
 document.addEventListener('visibilitychange', async () => {
@@ -1011,7 +1093,7 @@ Cloud.on(() => {
   if (Cloud.status.state === 'ok') Receipts.flush();
 });
 Cloud.onRemoteChange = () => { applyTheme(); render(); };
-Pro.on(() => { render(); if (Pro.active) { Cloud.syncNow(); Receipts.flush(); } });
+Pro.on(() => { AutoTrack.restore(); render(); if (Pro.active) { Cloud.syncNow(); Receipts.flush(); } });
 
 (async function boot() {
   if (NATIVE) { document.documentElement.classList.add('native'); await loadNative(); }
@@ -1019,6 +1101,7 @@ Pro.on(() => { render(); if (Pro.active) { Cloud.syncNow(); Receipts.flush(); } 
   render();
   if (db.track) startWatch(); // resume a shift after the app was closed
   await Pro.init();
+  await AutoTrack.restore(); renderAuto();
   await Cloud.init();
   Ads.init();
   if (!NATIVE && 'serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});

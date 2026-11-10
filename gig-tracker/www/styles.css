@@ -364,3 +364,33 @@ h1 { font-size: 34px; line-height: 1.1; font-weight: 700; letter-spacing: -.035e
 .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .viewer-x { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; width: 40px; height: 40px; border-radius: 50%; border: 0;
   background: rgba(255, 255, 255, .15); color: #fff; font-size: 16px; }
+
+/* ---------- automatic drive detection ---------- */
+.auto-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin: -12px 0 14px; padding: 12px 14px 12px 18px;
+  border-radius: var(--r-md); border: 1px solid var(--line); background: var(--card); }
+.auto-row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.auto-row b { font-size: 15px; }
+.auto-row span:not(.switch):not(.pro-tag) { font-size: 12.5px; color: var(--fg2); }
+.auto-row span.live { color: var(--fg); font-weight: 600; }
+.switch { width: 50px; height: 30px; border-radius: 999px; background: var(--line); position: relative; flex: none; transition: background .3s var(--ease); }
+.switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: var(--fg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .3); transition: transform .45s var(--spring), background .3s; }
+.switch.on { background: var(--fg); }
+.switch.on i { transform: translateX(20px); background: var(--bg); }
+.drives-cta { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; margin-top: -4px; animation: rise .5s var(--ease) both; }
+.drives-cta b { display: block; font-size: 16px; }
+.drives-cta span:not(.badge):not(.count) { font-size: 13px; color: var(--fg2); }
+.drives-cta .count { min-width: 28px; height: 28px; border-radius: 999px; background: var(--inv-bg); color: var(--inv-fg); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.drive { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 14px 10px 10px; margin-bottom: 8px; border-radius: var(--r-md);
+  border: 1.5px solid var(--line); background: var(--card); animation: rise .45s var(--ease) both; animation-delay: calc(var(--i, 0) * 30ms);
+  transition: border-color .25s var(--ease), background .25s var(--ease), transform .45s var(--spring); }
+.drive.on { border-color: var(--fg); background: var(--card-hi); }
+.drive b { display: block; font-size: 16px; }
+.drive span:not(.tick) { font-size: 12.5px; color: var(--fg2); }
+.drive .tick { width: 24px; height: 24px; border-radius: 50%; border: 1.5px solid var(--fg3); flex: none; display: grid; place-items: center; }
+.drive.on .tick { background: var(--fg); border-color: var(--fg); }
+.drive.on .tick::after { content: ""; width: 10px; height: 5px; border: 2px solid var(--bg); border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px); }
+.route { width: 56px; height: 56px; flex: none; border-radius: 12px; background: var(--card-hi); border: 1px solid var(--line); }
+.route polyline { fill: none; stroke: var(--fg); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.route .r-start { fill: var(--bg); stroke: var(--fg); stroke-width: 2; }
+.route .r-end { fill: var(--fg); }

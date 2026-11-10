@@ -64,7 +64,7 @@ const DEFAULT_SETTINGS = {
   method: 'standard', theme: 'system', totalMiles: {}, updatedAt: 0,
 };
 function emptyDb() {
-  return { v: 2, shifts: [], expenses: [], settings: { ...DEFAULT_SETTINGS }, track: null,
+  return { v: 2, shifts: [], expenses: [], settings: { ...DEFAULT_SETTINGS }, track: null, auto: null, drives: [],
     sync: { userId: null, lastPull: null, dirty: {}, deleted: {} } };
 }
 function normalize(d) {
@@ -74,6 +74,8 @@ function normalize(d) {
   out.expenses = Array.isArray(d.expenses) ? d.expenses : [];
   out.settings = { ...DEFAULT_SETTINGS, ...d.settings, totalMiles: { ...(d.settings && d.settings.totalMiles) } };
   out.track = d.track || null;
+  out.auto = d.auto || null;                                  // automatic drive detection state (this phone only)
+  out.drives = Array.isArray(d.drives) ? d.drives : [];       // detected drives waiting for review
   const s = d.sync || {};
   out.sync = { userId: s.userId || null, lastPull: s.lastPull || null, dirty: { ...s.dirty }, deleted: { ...s.deleted } };
   return out;
